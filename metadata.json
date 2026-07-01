@@ -1,0 +1,6 @@
+{
+  "name": "Hizmet Takip Sistemi",
+  "description": "Mail, Sunucu ve Domain hizmetlerinin son kullanma tarihlerini, ücret geçmişlerini yöneten, Excel raporlama ve analiz desteği sunan güvenli yönetim paneli.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
