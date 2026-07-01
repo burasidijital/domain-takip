@@ -32,6 +32,10 @@ import {
   Clock,
   Layers,
   HelpCircle,
+  Users,
+  UserPlus,
+  Shield,
+  Key,
 } from "lucide-react";
 
 // Types corresponding to backend
@@ -94,10 +98,22 @@ export default function HizmetTakipSistemi() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Filters & Tabs
-  const [activeTab, setActiveTab] = useState<"services" | "excel" | "analysis">("services");
+  const [activeTab, setActiveTab] = useState<"services" | "excel" | "analysis" | "users">("services");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
+
+  // Users Management states
+  const [usersList, setUsersList] = useState<{ id: number; username: string; created_at: string }[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState("");
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [editUserId, setEditUserId] = useState<number | null>(null);
+  const [editUsername, setEditUsername] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [userActionLoading, setUserActionLoading] = useState(false);
+  const [userActionSuccess, setUserActionSuccess] = useState("");
 
   // Masking controls (True = mask prices with ******, False = show them)
   const [revealedServicePrices, setRevealedServicePrices] = useState<Record<number, boolean>>({});
@@ -119,10 +135,13 @@ export default function HizmetTakipSistemi() {
   const [formCurrency, setFormCurrency] = useState<"TRY" | "USD" | "EUR" | "GBP">("TRY");
   const [formDomain, setFormDomain] = useState("");
   const [formNotes, setFormNotes] = useState("");
-  const [formLogNewPayment, setFormLogNewPayment] = useState(false);
 
   // Cost comparison variables for new entry
   const [historySuggestions, setHistorySuggestions] = useState<PaymentHistory[]>([]);
+
+  // Renewal payment confirmation states
+  const [showRenewalConfirmModal, setShowRenewalConfirmModal] = useState(false);
+  const [suggestedRenewalDate, setSuggestedRenewalDate] = useState("");
 
   // Excel Upload States
   const [excelFile, setExcelFile] = useState<File | null>(null);
@@ -254,6 +273,132 @@ export default function HizmetTakipSistemi() {
     };
   }, []);
 
+  // Users management actions
+  async function fetchUsers() {
+    setUsersLoading(true);
+    setUsersError("");
+    try {
+      const token = localStorage.getItem("x-auth-token") || "";
+      const res = await fetch("/api/users", {
+        headers: { "x-auth-token": token },
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setUsersList(data.users || []);
+      } else {
+        setUsersError(data.message || "Kullanıcılar yüklenemedi.");
+      }
+    } catch (e) {
+      setUsersError("Kullanıcı sunucusuna bağlanırken hata meydana geldi.");
+    } finally {
+      setUsersLoading(false);
+    }
+  }
+
+  async function handleAddUser(e: React.FormEvent) {
+    e.preventDefault();
+    setUserActionLoading(true);
+    setUsersError("");
+    setUserActionSuccess("");
+    try {
+      const token = localStorage.getItem("x-auth-token") || "";
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-auth-token": token,
+        },
+        body: JSON.stringify({
+          username: newUsername,
+          password: newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setUserActionSuccess(data.message || "Kullanıcı başarıyla eklendi.");
+        setNewUsername("");
+        setNewPassword("");
+        fetchUsers();
+      } else {
+        setUsersError(data.message || "Kullanıcı eklenemedi.");
+      }
+    } catch (e) {
+      setUsersError("Sunucu bağlantı hatası.");
+    } finally {
+      setUserActionLoading(false);
+    }
+  }
+
+  async function handleUpdateUser(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editUserId) return;
+    setUserActionLoading(true);
+    setUsersError("");
+    setUserActionSuccess("");
+    try {
+      const token = localStorage.getItem("x-auth-token") || "";
+      const res = await fetch("/api/users", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "x-auth-token": token,
+        },
+        body: JSON.stringify({
+          id: editUserId,
+          username: editUsername,
+          password: editPassword || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setUserActionSuccess(data.message || "Kullanıcı başarıyla güncellendi.");
+        setEditUserId(null);
+        setEditUsername("");
+        setEditPassword("");
+        fetchUsers();
+      } else {
+        setUsersError(data.message || "Kullanıcı güncellenemedi.");
+      }
+    } catch (e) {
+      setUsersError("Sunucu bağlantı hatası.");
+    } finally {
+      setUserActionLoading(false);
+    }
+  }
+
+  async function handleDeleteUser(id: number) {
+    setUserActionLoading(true);
+    setUsersError("");
+    setUserActionSuccess("");
+    try {
+      const token = localStorage.getItem("x-auth-token") || "";
+      const res = await fetch(`/api/users?id=${id}`, {
+        method: "DELETE",
+        headers: { "x-auth-token": token },
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setUserActionSuccess(data.message || "Kullanıcı silindi.");
+        fetchUsers();
+      } else {
+        setUsersError(data.message || "Kullanıcı silinemedi.");
+      }
+    } catch (e) {
+      setUsersError("Sunucu bağlantı hatası.");
+    } finally {
+      setUserActionLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === "users" && isAuthenticatedState) {
+      const timer = setTimeout(() => {
+        fetchUsers();
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab, isAuthenticatedState]);
+
   // Dynamic filter lists for layout bindings
   const filteredServices = services.filter((s) => {
     const matchesSearch =
@@ -330,14 +475,8 @@ export default function HizmetTakipSistemi() {
   };
 
   // Handle service updates
-  const handleUpdateService = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const executeUpdateService = async (finalExpiryDate: string, logPaymentOverride?: boolean) => {
     if (!selectedService) return;
-    if (!formName || !formExpiryDate || formCost === "") {
-      alert("Lütfen temel zorunlu alanları doldurun.");
-      return;
-    }
-
     setActionLoading(true);
     try {
       const token = localStorage.getItem("x-auth-token") || "";
@@ -351,18 +490,19 @@ export default function HizmetTakipSistemi() {
           name: formName,
           type: formType,
           provider: formProvider,
-          expiry_date: formExpiryDate,
+          expiry_date: finalExpiryDate,
           cost: Number(formCost),
           currency: formCurrency,
           domain: formDomain,
           notes: formNotes,
-          log_new_payment: formLogNewPayment,
+          log_new_payment: true,
         }),
       });
 
       if (res.ok) {
         setIsServiceDrawerOpen(false);
-        setIsNewServiceModalOpen(false); // also closes in case
+        setIsNewServiceModalOpen(false);
+        setShowRenewalConfirmModal(false);
         setSelectedService(null);
         resetFormValues();
         fetchDashboardData();
@@ -375,6 +515,45 @@ export default function HizmetTakipSistemi() {
     } finally {
       setActionLoading(false);
     }
+  };
+
+  const handleUpdateService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedService) return;
+    if (!formName || !formExpiryDate || formCost === "") {
+      alert("Lütfen temel zorunlu alanları doldurun.");
+      return;
+    }
+
+    // Check if user manually modified/edited the date
+    const isDateUnchanged = formExpiryDate === selectedService.expiry_date;
+
+    if (isDateUnchanged) {
+      try {
+        const expiryDateObj = new Date(formExpiryDate);
+        const expiryYear = expiryDateObj.getFullYear();
+        const currentYear = new Date().getFullYear();
+
+        if (!isNaN(expiryYear) && expiryYear === currentYear) {
+          // Calculate 1 year later
+          const nextYearDate = new Date(expiryDateObj);
+          nextYearDate.setFullYear(nextYearDate.getFullYear() + 1);
+          const y = nextYearDate.getFullYear();
+          const m = String(nextYearDate.getMonth() + 1).padStart(2, "0");
+          const d = String(nextYearDate.getDate()).padStart(2, "0");
+          const suggestedDate = `${y}-${m}-${d}`;
+
+          setSuggestedRenewalDate(suggestedDate);
+          setShowRenewalConfirmModal(true);
+          return; // Wait for modal confirmation
+        }
+      } catch (err) {
+        console.error("Date checking error:", err);
+      }
+    }
+
+    // If date is modified manually, or not in the current year, execute payment directly
+    await executeUpdateService(formExpiryDate);
   };
 
   // Handle service deletions
@@ -466,7 +645,6 @@ export default function HizmetTakipSistemi() {
     setFormCurrency(service.currency);
     setFormDomain(service.domain || "");
     setFormNotes(service.notes || "");
-    setFormLogNewPayment(false);
 
     filterHistoryByTerm(service.name, service.provider || "", service.type);
     setIsServiceDrawerOpen(true);
@@ -481,7 +659,6 @@ export default function HizmetTakipSistemi() {
     setFormCurrency("TRY");
     setFormDomain("");
     setFormNotes("");
-    setFormLogNewPayment(false);
     setHistorySuggestions([]);
   };
 
@@ -588,8 +765,8 @@ export default function HizmetTakipSistemi() {
       <div className="flex select-none items-center justify-center min-h-screen bg-slate-50 p-4 font-sans progression-fade">
         <div className="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
           {/* Header Theme layout */}
-          <div className="bg-gradient-to-br from-slate-900 to-indigo-950 p-8 text-white relative flex flex-col items-center text-center">
-            <div className="absolute top-4 right-4 bg-white/10 px-3 py-1 rounded-full text-xs font-mono tracking-wider backdrop-blur-sm">
+          <div className="bg-white p-8 border-b border-slate-100 relative flex flex-col items-center text-center">
+            <div className="absolute top-4 right-4 bg-slate-100 px-3 py-1 rounded-full text-xs font-mono tracking-wider text-slate-500">
               v1.4.0
             </div>
             
@@ -599,16 +776,17 @@ export default function HizmetTakipSistemi() {
                 alt="OZD Group Logo"
                 fill
                 className="object-contain"
+                style={{ filter: "brightness(0)" }}
                 referrerPolicy="no-referrer"
                 priority
               />
             </div>
             
-            <div className="flex items-center space-x-2 text-indigo-400 mb-1">
+            <div className="flex items-center space-x-2 text-indigo-600 mb-1">
               <SlidersHorizontal className="w-4 h-4 animate-pulse shrink-0" />
               <span className="text-xs uppercase tracking-widest font-semibold">Hizmet Takip Sistemi</span>
             </div>
-            <p className="text-sm text-slate-300 mt-1">Mail, Sunucu ve Domain abonelik koruma paneli.</p>
+            <p className="text-sm text-slate-500 mt-1">Mail, Sunucu ve Domain abonelik koruma paneli.</p>
           </div>
 
           <form onSubmit={handleLogin} className="p-8 space-y-5">
@@ -684,13 +862,14 @@ export default function HizmetTakipSistemi() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 px-4 sm:px-8 py-3.5 shadow-sm">
         <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-4">
           <div className="flex flex-col sm:flex-row items-center gap-4 select-none w-full lg:w-auto">
-            {/* Dark container to highlight white SVG logo */}
-            <div className="px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-center shrink-0 w-44 h-10 relative">
+            {/* Logo container */}
+            <div className="flex items-center justify-center shrink-0 w-44 h-10 relative">
               <Image
                 src="https://ozdgroup.com/wp-content/uploads/2021/07/ozd-group-yatay-beyaz-logo.svg"
                 alt="OZD Group Logo"
                 fill
-                className="object-contain p-1.5"
+                className="object-contain"
+                style={{ filter: "brightness(0)" }}
                 referrerPolicy="no-referrer"
                 priority
               />
@@ -857,6 +1036,17 @@ export default function HizmetTakipSistemi() {
             <Activity className="w-4 h-4" />
             Analiz & Maliyet Raporu
           </button>
+          <button
+            onClick={() => setActiveTab("users")}
+            className={`px-5 py-3 text-sm font-medium transition cursor-pointer border-b-2 flex items-center gap-2 ${
+              activeTab === "users"
+                ? "border-slate-800 text-slate-900 font-bold"
+                : "border-transparent text-slate-500 hover:text-slate-950"
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            Kullanıcı Yönetimi
+          </button>
         </div>
 
         {/* ----------------- TAB: SERVICES LISTING ----------------- */}
@@ -969,27 +1159,30 @@ export default function HizmetTakipSistemi() {
 
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="font-semibold text-slate-900 group-hover:text-indigo-600 transition text-sm sm:text-base tracking-tight truncate">
-                              {s.name}
+                            <h3 className="font-semibold text-slate-900 transition text-sm sm:text-base tracking-tight truncate flex items-center gap-1">
+                              <span className={
+                                s.type === "mail" ? "text-cyan-600 font-bold" :
+                                s.type === "sunucu" ? "text-indigo-600 font-bold" :
+                                s.type === "domain" ? "text-amber-600 font-bold" :
+                                "text-slate-600 font-bold"
+                              }>
+                                {s.type === "mail" ? "E-Posta" : s.type === "sunucu" ? "Sunucu" : s.type === "domain" ? "Alan Adı" : "Diğer"}
+                              </span>
+                              <span className="text-slate-400 font-normal mx-0.5">/</span>
+                              <span className="group-hover:text-indigo-600 transition">{s.name}</span>
                             </h3>
                             <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border inline-block ${dayObj.color}`}>
                               {dayObj.text}
                             </span>
                           </div>
                           
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-slate-400">
-                            <span className="font-medium text-slate-500">{s.provider || "Sağlayıcı Firma Yok"}</span>
-                            {s.domain && (
-                              <>
-                                <span className="text-slate-300">|</span>
-                                <span className="font-mono text-[11px] bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded text-slate-500">
-                                  {s.domain}
-                                </span>
-                              </>
-                            )}
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-slate-500">
+                            <span>şirket: <span className="text-slate-800 font-semibold">{s.domain || "Belirtilmemiş"}</span></span>
                             <span className="text-slate-300">|</span>
-                            <span className="inline-flex items-center gap-1 font-mono text-[11px] bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded text-slate-500">
-                              <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span>sağlayıcı: <span className="text-slate-800 font-semibold">{s.provider || "Belirtilmemiş"}</span></span>
+                            <span className="text-slate-300">|</span>
+                            <span className="inline-flex items-center gap-1 text-slate-600 font-medium">
+                              <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                               {formatDate(s.expiry_date)}
                             </span>
                           </div>
@@ -1361,6 +1554,216 @@ export default function HizmetTakipSistemi() {
             </div>
           </div>
         )}
+
+        {/* ----------------- TAB: USER MANAGEMENT ----------------- */}
+        {activeTab === "users" && (
+          <div className="space-y-6 progression-fade">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              {/* Left side: Add User or Edit User Form */}
+              <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
+                {editUserId ? (
+                  <>
+                    <div className="flex items-center gap-2 text-indigo-600">
+                      <Shield className="w-5 h-5" />
+                      <h3 className="font-bold text-sm uppercase tracking-wider">Kullanıcıyı Güncelle</h3>
+                    </div>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Seçilen kullanıcının adını değiştirebilir veya yeni bir şifre tanımlayabilirsiniz.
+                    </p>
+                    <form onSubmit={handleUpdateUser} className="space-y-4 pt-2">
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-slate-500 uppercase block">Kullanıcı Adı</label>
+                        <input
+                          type="text"
+                          required
+                          value={editUsername}
+                          onChange={(e) => setEditUsername(e.target.value)}
+                          placeholder="Örn: cagaty"
+                          className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-300/20 font-medium"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-slate-500 uppercase block">
+                          Yeni Şifre <span className="text-slate-400 font-normal">(Boş bırakılırsa değişmez)</span>
+                        </label>
+                        <input
+                          type="password"
+                          value={editPassword}
+                          onChange={(e) => setEditPassword(e.target.value)}
+                          placeholder="Min. 4 karakter girin"
+                          className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-300/20 font-medium"
+                        />
+                      </div>
+
+                      <div className="flex gap-2 pt-2">
+                        <button
+                          type="submit"
+                          disabled={userActionLoading}
+                          className="flex-1 bg-slate-900 hover:bg-slate-850 text-white font-semibold py-2 rounded-lg text-xs cursor-pointer transition flex items-center justify-center gap-1"
+                        >
+                          {userActionLoading ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            "Güncelle"
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditUserId(null);
+                            setEditUsername("");
+                            setEditPassword("");
+                          }}
+                          className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg text-xs cursor-pointer transition"
+                        >
+                          İptal
+                        </button>
+                      </div>
+                    </form>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 text-indigo-600">
+                      <UserPlus className="w-5 h-5" />
+                      <h3 className="font-bold text-sm uppercase tracking-wider">Yeni Kullanıcı Ekle</h3>
+                    </div>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Sisteme erişebilecek yeni bir yönetici veya operatör hesabı oluşturun.
+                    </p>
+                    <form onSubmit={handleAddUser} className="space-y-4 pt-2">
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-slate-500 uppercase block">Kullanıcı Adı</label>
+                        <input
+                          type="text"
+                          required
+                          value={newUsername}
+                          onChange={(e) => setNewUsername(e.target.value)}
+                          placeholder="Örn: cagaty"
+                          className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-300/20 font-medium"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-slate-500 uppercase block">Şifre</label>
+                        <input
+                          type="password"
+                          required
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="Min. 4 karakter girin"
+                          className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-300/20 font-medium"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={userActionLoading}
+                        className="w-full bg-slate-900 hover:bg-slate-850 text-white font-semibold py-2 rounded-lg text-xs cursor-pointer transition flex items-center justify-center gap-1.5"
+                      >
+                        {userActionLoading ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <>
+                            <UserPlus className="w-3.5 h-3.5" />
+                            Kullanıcı Ekle
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  </>
+                )}
+
+                {/* Notifications in Form */}
+                {usersError && (
+                  <div className="p-3 bg-rose-50 border border-rose-100 rounded-lg text-xs text-rose-700 font-medium flex items-center gap-2 animate-fadeIn">
+                    <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                    <span>{usersError}</span>
+                  </div>
+                )}
+                {userActionSuccess && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-xs text-emerald-700 font-medium flex items-center gap-2 animate-fadeIn">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <span>{userActionSuccess}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Right side: Users Directory Table */}
+              <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm lg:col-span-2 space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Users className="w-4 h-4 text-indigo-500" />
+                    SİSTEM KULLANICILARI FİHRİSTİ
+                  </h3>
+                  <p className="text-xs text-slate-400">Veritabanında kayıtlı olan ve yönetim paneline giriş yetkisine sahip aktif hesaplar listesi.</p>
+                </div>
+
+                {usersLoading ? (
+                  <div className="flex flex-col items-center justify-center py-20">
+                    <RefreshCw className="w-8 h-8 text-slate-400 animate-spin mb-2" />
+                    <p className="text-xs text-slate-500">Kullanıcılar listesi taranıyor...</p>
+                  </div>
+                ) : usersList.length > 0 ? (
+                  <div className="overflow-x-auto border border-slate-100 rounded-xl">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100 text-slate-400 uppercase tracking-wider font-bold select-none text-[10px]">
+                          <th className="px-4 py-3">Kullanıcı Adı</th>
+                          <th className="px-4 py-3">Oluşturulma Tarihi</th>
+                          <th className="px-4 py-3 text-right">Eylemler</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50 font-medium text-slate-700">
+                        {usersList.map((usr) => (
+                          <tr key={usr.id} className="hover:bg-slate-50/50 transition duration-150">
+                            <td className="px-4 py-3.5 flex items-center gap-2">
+                              <div className="w-7 h-7 bg-slate-100 rounded-full flex items-center justify-center font-bold text-xs uppercase text-slate-600 border border-slate-200 select-none">
+                                {usr.username.slice(0, 2)}
+                              </div>
+                              <span className="font-semibold text-slate-900">{usr.username}</span>
+                            </td>
+                            <td className="px-4 py-3.5 text-slate-500 font-mono">
+                              {usr.created_at ? new Date(usr.created_at).toLocaleString("tr-TR") : "-"}
+                            </td>
+                            <td className="px-4 py-3.5 text-right">
+                              <div className="inline-flex gap-1.5">
+                                <button
+                                  onClick={() => {
+                                    setEditUserId(usr.id);
+                                    setEditUsername(usr.username);
+                                    setEditPassword("");
+                                    setUsersError("");
+                                    setUserActionSuccess("");
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-indigo-600 rounded hover:bg-indigo-50 border border-transparent hover:border-indigo-100 transition cursor-pointer"
+                                  title="Düzenle"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteUser(usr.id)}
+                                  className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 border border-transparent hover:border-rose-100 transition cursor-pointer"
+                                  title="Sil"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    Sistemde kayıtlı kullanıcı bulunamadı.
+                  </p>
+                )}
+              </div>
+
+            </div>
+          </div>
+        )}
       </main>
 
       {/* FOOTER METADATA SIGNATURES */}
@@ -1370,6 +1773,73 @@ export default function HizmetTakipSistemi() {
           <p className="font-mono mt-1 sm:mt-0 text-slate-300">SQLite persistence layer active.</p>
         </div>
       </footer>
+
+      {/* ----------------- MODAL: RENEWAL CONFIRMATION ----------------- */}
+      {showRenewalConfirmModal && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowRenewalConfirmModal(false);
+            }
+          }}
+          className="fixed inset-0 bg-slate-900/65 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-fadeIn"
+        >
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+            <div className="p-5 bg-emerald-600 text-white flex items-center gap-3 shrink-0">
+              <CheckCircle2 className="w-6 h-6 shrink-0" />
+              <div>
+                <h3 className="font-bold text-sm sm:text-base tracking-tight">Yenileme Tarihi Güncelleme Onayı</h3>
+                <p className="text-[10px] text-emerald-105">Ödeme işlemi otomatik tarih uzatma uyarısı</p>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Yenileme tarihi içinde bulunduğumuz yıl (<span className="font-bold">{new Date().getFullYear()}</span>) ile aynı olduğu için sistem tarihi otomatik olarak <span className="font-semibold text-emerald-600">1 yıl ileri</span> almıştır.
+              </p>
+              
+              <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-400">Eski Tarih:</span>
+                  <span className="font-mono text-slate-600 font-medium">{formatDate(selectedService?.expiry_date || "")}</span>
+                </div>
+                <div className="flex justify-between text-xs border-t border-slate-200/60 pt-2">
+                  <span className="text-slate-500 font-semibold">Yeni Yenileme Tarihi:</span>
+                  <span className="font-mono text-emerald-600 font-bold bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded">
+                    {formatDate(suggestedRenewalDate)}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-500">
+                Bu yenileme tarihini onaylıyor musunuz? Onaylarsanız ödeme işlenecektir ve tarihçe kaydı otomatik olarak eklenecektir.
+              </p>
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowRenewalConfirmModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg cursor-pointer"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  // Direct submit with suggestedRenewalDate and forcing log_new_payment: true (since they are processing the payment!)
+                  await executeUpdateService(suggestedRenewalDate, true);
+                }}
+                disabled={actionLoading}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-5 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer active:scale-98 transition shadow-sm"
+              >
+                {actionLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+                Onayla ve Ödemeyi İşle
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ----------------- MODAL: CREATE NEW SERVICE ----------------- */}
       {isNewServiceModalOpen && (
@@ -1676,7 +2146,7 @@ export default function HizmetTakipSistemi() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-500 block">Alan Adı (Domain / CDN IP)</label>
+                    <label className="text-[10px] font-bold text-slate-500 block">Şirket Bilgisi</label>
                     <input
                       type="text"
                       value={formDomain}
@@ -1716,30 +2186,17 @@ export default function HizmetTakipSistemi() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 block">Özel Notlar</label>
-                  <textarea
-                    value={formNotes}
-                    onChange={(e) => setFormNotes(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none h-14"
-                  />
-                </div>
-
-                {/* Log payment explicitly indicator checkbox */}
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-start space-x-2 select-none">
-                  <input
-                    type="checkbox"
-                    id="trigger_payment_check"
-                    checked={formLogNewPayment}
-                    onChange={(e) => setFormLogNewPayment(e.target.checked)}
-                    className="mt-1 cursor-pointer"
-                  />
-                  <div>
-                    <label htmlFor="trigger_payment_check" className="text-xs font-semibold text-slate-800 cursor-pointer block">
-                      Yenileme Ödemesini Tarihçeye Kaydet
-                    </label>
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      Eğer bu dönem için yeni bir ödeme yaptınız ise, bunu işaretleyerek ödeme geçmişine yeni bir transaction girdisi ekleyebilirsiniz. (Veya fiyat değiştiğinde sistem otomatik kaydeder)
-                    </p>
+                  {/* Automatic payment history log indicator */}
+                  <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl flex items-start space-x-2 select-none animate-fadeIn">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0" />
+                    <div>
+                      <label className="text-xs font-semibold text-emerald-800 block">
+                        Ödeme Geçmişi Otomatik Kaydedilir
+                      </label>
+                      <p className="text-[10px] text-emerald-600/80 mt-0.5">
+                        Bu hizmet ödemesini işlediğinizde, ödeme tutarı ve tarihi otomatik olarak geçmiş raporlarınıza işlenecektir.
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -1756,10 +2213,10 @@ export default function HizmetTakipSistemi() {
                   <button
                     type="submit"
                     disabled={actionLoading}
-                    className="bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs px-4 py-2 rounded-lg flex items-center gap-1 cursor-pointer active:scale-97"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer active:scale-97 transition shadow-sm hover:shadow"
                   >
-                    {actionLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Edit className="w-3.5 h-3.5" />}
-                    Değişiklikleri Kaydet
+                    {actionLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                    Ödemeyi İşle
                   </button>
                 </div>
               </form>
